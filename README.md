@@ -28,7 +28,10 @@ work, no matter what app is in front.
   showing how much each drive grew or shrank since the last tick.
 - **All real partitions** — auto-filters the noise (snap/`squashfs` loop mounts,
   `tmpfs`, and other pseudo filesystems).
-- **Color-coded bars** — green → yellow → orange → red as a drive fills up.
+- **Polished UI** — rounded cards, smooth **color-gradient** bars (green →
+  yellow → orange → red) with rounded caps, animated fill/percentage
+  transitions, per-drive icons (🐧 Linux · 🪟 Windows · 🔌 removable · ⚙ boot),
+  a gradient accent header, and a soft fade-in on launch.
 - **Frameless & draggable** — drag from anywhere to reposition it.
 - **Remembers its place** — position, refresh speed, and view mode persist.
 - **Auto-detects USB drives** — plug one in and it appears; unplug and it goes.
