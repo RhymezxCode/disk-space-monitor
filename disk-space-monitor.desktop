@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Disk Space Monitor
+Comment=Floating always-on-top disk usage widget
+Exec=python3 disk_monitor.py
+Icon=drive-harddisk
+Terminal=false
+Categories=System;Monitor;Utility;
+StartupNotify=false
