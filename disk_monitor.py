@@ -15,6 +15,8 @@ License: MIT
 
 from __future__ import annotations
 
+__version__ = "1.0.1"
+
 import json
 import os
 import shutil
@@ -692,7 +694,8 @@ class DiskMonitorApp:
         heading("Danger zone")
         action("Uninstall Disk Monitor…", self.uninstall, fg=DANGER)
 
-        tk.Frame(body, bg=BG, height=10).pack()
+        tk.Label(body, text=f"{APP_NAME}  ·  v{__version__}", bg=BG, fg=MUTED,
+                 font=self.font_small).pack(pady=(14, 10))
 
     def _close_settings(self) -> None:
         if self.settings_win is not None:

@@ -5,6 +5,43 @@ All notable changes to **Disk Space Monitor** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-06-21
+
+A usability release that brings every option into one place, makes the widget
+resizable, and adds proper desktop integration (start-on-login and a one-click
+uninstall).
+
+### Added
+
+- **Settings panel** — a dark-themed dialog opened from a new ⚙ header button or
+  *right-click → Settings…*, gathering every preference in one place.
+- **Resizable widget** — drag the new grip in the bottom-right corner, or use the
+  **Width** slider in Settings (280–760 px). Cards reflow live and the chosen
+  width is remembered.
+- **Start on login** — a toggle that writes/removes a `~/.config/autostart`
+  entry (with an absolute `Exec` path) so the widget can launch at every login.
+- **Opacity control** — a slider to set window transparency (0.3–1.0), applied
+  live and persisted.
+- **In-app uninstall** — *Settings → Uninstall Disk Monitor…* removes the
+  launcher, autostart entry, and saved settings after a confirmation, then exits
+  (program files are intentionally left in place). A matching `uninstall.sh`
+  companion script does the same cleanup from a terminal.
+- **Window actions** in Settings — *Reset position* and *Open settings folder*.
+- **Version label** shown at the bottom of the Settings panel.
+
+### Changed
+
+- The right-click menu now includes a **Settings…** entry, and the header now
+  carries a **⚙** button alongside 📌 (pin), ▭ (compact), and ✕ (close).
+- `config.json` now also persists window **width** and **opacity** (`alpha`)
+  in addition to position, refresh interval, pinned, and compact state.
+
+### Fixed
+
+- The bundled `disk-space-monitor.desktop` / autostart entries now use the
+  Python interpreter and an absolute script path resolved at runtime, so the
+  launcher keeps working regardless of where the folder lives.
+
 ## [1.0.0] - 2026-06-21
 
 First stable release — a lightweight, floating, always-on-top disk usage widget
@@ -55,4 +92,5 @@ for Linux that tracks every real partition in real time.
 - **Minimal dependencies** — pure Python with Tkinter plus `psutil>=5.9`.
 - **MIT licensed.**
 
+[1.0.1]: https://github.com/RhymezxCode/disk-space-monitor/releases/tag/v1.0.1
 [1.0.0]: https://github.com/RhymezxCode/disk-space-monitor/releases/tag/v1.0.0
