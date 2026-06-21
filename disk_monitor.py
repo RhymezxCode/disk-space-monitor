@@ -17,10 +17,13 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
+import sys
 import tkinter as tk
 import tkinter.font as tkfont
 from dataclasses import dataclass
+from tkinter import messagebox
 
 import psutil
 
@@ -36,6 +39,7 @@ FG = "#f4f5fb"
 MUTED = "#8b90a6"
 TRACK = "#3a3d4d"       # progress bar groove
 ACCENT = "#bd93f9"
+DANGER = "#ff6b6b"
 
 # Smooth usage gradient (green → lime → yellow → orange → red)
 USAGE_STOPS = [
@@ -52,8 +56,10 @@ HEADER_STOPS = [
     (1.0, (255, 121, 198)),
 ]
 
-ALPHA = 0.96            # final window opacity (0..1)
-WIDTH = 348             # widget width in px
+ALPHA = 0.96            # default window opacity (0..1)
+DEFAULT_WIDTH = 348     # default widget width in px
+MIN_WIDTH = 280         # smallest the user can shrink the widget
+MAX_WIDTH = 760         # largest the user can grow the widget
 PAD = 12                # window inner padding
 CARD_GAP = 9            # gap between cards
 CARD_H = 78             # normal card height
@@ -65,11 +71,17 @@ RADIUS = 16             # card corner radius
 DEFAULT_INTERVAL_MS = 1500   # data refresh cadence
 ANIM_MS = 33                 # ~30 fps animation tick
 
-CONFIG_DIR = os.path.join(
-    os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")),
-    "disk-space-monitor",
-)
+APP_ID = "disk-space-monitor"
+APP_NAME = "Disk Space Monitor"
+SCRIPT_PATH = os.path.abspath(__file__)
+PYTHON_BIN = sys.executable or "python3"
+
+XDG_CONFIG = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
+XDG_DATA = os.environ.get("XDG_DATA_HOME", os.path.expanduser("~/.local/share"))
+CONFIG_DIR = os.path.join(XDG_CONFIG, APP_ID)
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
+AUTOSTART_PATH = os.path.join(XDG_CONFIG, "autostart", APP_ID + ".desktop")
+LAUNCHER_PATH = os.path.join(XDG_DATA, "applications", APP_ID + ".desktop")
 
 SKIP_FSTYPES = {
     "squashfs", "devtmpfs", "tmpfs", "devpts", "sysfs", "proc", "cgroup",
@@ -131,14 +143,19 @@ def pretty_name(mp: str) -> str:
     return "Root  (/)" if mp == "/" else mp
 
 
-def round_rect(cv: tk.Canvas, x1, y1, x2, y2, r, **kw):
-    """Draw a smooth rounded rectangle on a Canvas; returns the item id."""
-    pts = [
+def round_rect_points(x1, y1, x2, y2, r):
+    """The control points for a smooth rounded rectangle polygon."""
+    return [
         x1 + r, y1, x2 - r, y1, x2, y1, x2, y1 + r,
         x2, y2 - r, x2, y2, x2 - r, y2, x1 + r, y2,
         x1, y2, x1, y2 - r, x1, y1 + r, x1, y1,
     ]
-    return cv.create_polygon(pts, smooth=True, splinesteps=24, **kw)
+
+
+def round_rect(cv: tk.Canvas, x1, y1, x2, y2, r, **kw):
+    """Draw a smooth rounded rectangle on a Canvas; returns the item id."""
+    return cv.create_polygon(round_rect_points(x1, y1, x2, y2, r),
+                             smooth=True, splinesteps=24, **kw)
 
 
 def load_config() -> dict:
@@ -156,6 +173,63 @@ def save_config(cfg: dict) -> None:
             json.dump(cfg, fh, indent=2)
     except OSError:
         pass
+
+
+# --------------------------------------------------------------------------- #
+# Autostart + uninstall (user-level desktop integration)                       #
+# --------------------------------------------------------------------------- #
+def is_autostart_enabled() -> bool:
+    return os.path.exists(AUTOSTART_PATH)
+
+
+def set_autostart(enabled: bool) -> bool:
+    """Create or remove the ~/.config/autostart launcher. Returns success."""
+    try:
+        if enabled:
+            os.makedirs(os.path.dirname(AUTOSTART_PATH), exist_ok=True)
+            content = (
+                "[Desktop Entry]\n"
+                "Type=Application\n"
+                f"Name={APP_NAME}\n"
+                "Comment=Floating always-on-top disk usage widget\n"
+                f"Exec={PYTHON_BIN} {SCRIPT_PATH}\n"
+                "Icon=drive-harddisk\n"
+                "Terminal=false\n"
+                "X-GNOME-Autostart-enabled=true\n"
+            )
+            with open(AUTOSTART_PATH, "w", encoding="utf-8") as fh:
+                fh.write(content)
+        elif os.path.exists(AUTOSTART_PATH):
+            os.remove(AUTOSTART_PATH)
+        return True
+    except OSError:
+        return False
+
+
+def perform_uninstall() -> list[str]:
+    """Remove the launcher, autostart entry and saved settings.
+
+    Deliberately leaves the program files on disk — those are version-controlled
+    and the user can delete the folder by hand.
+    """
+    notes: list[str] = []
+    for path, label in ((AUTOSTART_PATH, "autostart entry"),
+                        (LAUNCHER_PATH, "app launcher")):
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+                notes.append(f"✓  removed {label}")
+        except OSError as exc:
+            notes.append(f"✗  {label}: {exc}")
+    try:
+        if os.path.isdir(CONFIG_DIR):
+            shutil.rmtree(CONFIG_DIR)
+            notes.append("✓  removed saved settings")
+    except OSError as exc:
+        notes.append(f"✗  settings: {exc}")
+    if not notes:
+        notes.append("Nothing to remove — it was not installed.")
+    return notes
 
 
 @dataclass
@@ -212,7 +286,7 @@ class PartitionCard:
 
         self.compact = app.compact
         self.h = CARD_H_COMPACT if self.compact else CARD_H
-        self.w = WIDTH - 2 * PAD
+        self.w = app.width - 2 * PAD
 
         self.cv = tk.Canvas(parent, width=self.w, height=self.h,
                             bg=BG, highlightthickness=0, bd=0)
@@ -284,6 +358,17 @@ class PartitionCard:
                 self.cv.itemconfig(self.delta_item, text="")
         self.prev_used = info.used
 
+    def relayout(self, w: int) -> None:
+        """Reflow the card to a new width (used by live resize)."""
+        self.w = w
+        self.cv.config(width=w)
+        self.cv.coords(self.card_bg, *round_rect_points(1, 1, w - 1, self.h - 1, RADIUS))
+        self.bar_x2 = w - 16
+        self.cv.coords(self.track, self.bar_x1, self.bar_y, self.bar_x2, self.bar_y)
+        self.cv.coords(self.pct_item, w - 16, 20)
+        self.cv.coords(self.delta_item, w - 16, self.h - 13)
+        self._redraw_bar()
+
     def step(self) -> None:
         """Ease the animated value toward the target; redraw bar + percent."""
         diff = self.target - self.display
@@ -318,9 +403,15 @@ class DiskMonitorApp:
         self.interval = int(self.cfg.get("interval_ms", DEFAULT_INTERVAL_MS))
         self.pinned = bool(self.cfg.get("pinned", True))
         self.compact = bool(self.cfg.get("compact", False))
+        self.width = self._clamp_width(self.cfg.get("width", DEFAULT_WIDTH))
+        self.alpha = max(0.2, min(1.0, float(self.cfg.get("alpha", ALPHA))))
+
+        self.settings_win: tk.Toplevel | None = None
+        self._suspend_width = False
+        self._resize_anchor = {"x": 0, "w": self.width}
 
         self.root = tk.Tk()
-        self.root.title("Disk Space Monitor")
+        self.root.title(APP_NAME)
         self.root.overrideredirect(True)
         self.root.attributes("-topmost", self.pinned)
         try:
@@ -349,11 +440,19 @@ class DiskMonitorApp:
         self.body = tk.Frame(self.outer, bg=BG)
         self.body.pack(fill="both", expand=True, padx=PAD, pady=(PAD, PAD - CARD_GAP))
 
+        self._build_grip()
         self._restore_position()
         self.refresh()
         self._animate()
         self._fade_in(0)
         self.root.protocol("WM_DELETE_WINDOW", self.quit)
+
+    @staticmethod
+    def _clamp_width(value) -> int:
+        try:
+            return max(MIN_WIDTH, min(MAX_WIDTH, int(value)))
+        except (TypeError, ValueError):
+            return DEFAULT_WIDTH
 
     # ---- chrome ---------------------------------------------------------- #
     def _build_header(self) -> None:
@@ -365,10 +464,11 @@ class DiskMonitorApp:
                          font=self.font_title)
         title.pack(side="left", padx=(6, 0))
 
-        self.btn_close = self._chrome_btn(hdr, "✕", self.quit, "#ff6b6b")
+        self.btn_close = self._chrome_btn(hdr, "✕", self.quit, DANGER)
         self.btn_compact = self._chrome_btn(hdr, "▭", self.toggle_compact, MUTED)
         self.btn_pin = self._chrome_btn(
             hdr, "📌", self.toggle_pin, ACCENT if self.pinned else MUTED)
+        self.btn_settings = self._chrome_btn(hdr, "⚙", self.open_settings, MUTED)
 
         for w in (hdr, title):
             self.make_draggable(w)
@@ -398,9 +498,21 @@ class DiskMonitorApp:
         b.bind("<Leave>", lambda _e, x=b, c=color: x.config(bg=HEADER_BG, fg=c))
         return b
 
+    def _build_grip(self) -> None:
+        """A small drag handle in the bottom-right corner to resize the width."""
+        grip = tk.Canvas(self.outer, width=16, height=16, bg=BG,
+                         highlightthickness=0, bd=0, cursor="bottom_right_corner")
+        for off in (3, 8, 13):
+            grip.create_line(16 - off, 16, 16, 16 - off, fill=MUTED)
+        grip.place(relx=1.0, rely=1.0, x=-2, y=-2, anchor="se")
+        grip.bind("<Button-1>", self._start_resize)
+        grip.bind("<B1-Motion>", self._on_resize)
+        self._grip = grip
+
     def _build_menu(self) -> None:
         self.menu = tk.Menu(self.root, tearoff=0, bg=CARD, fg=FG,
                             activebackground=ACCENT, activeforeground=BG, bd=0)
+        self.menu.add_command(label="Settings…", command=self.open_settings)
         self.menu.add_command(label="Refresh now", command=self.refresh)
         speed = tk.Menu(self.menu, tearoff=0, bg=CARD, fg=FG,
                         activebackground=ACCENT, activeforeground=BG)
@@ -434,19 +546,191 @@ class DiskMonitorApp:
         y = event.y_root - self._drag["y"]
         self.root.geometry(f"+{x}+{y}")
 
+    # ---- resizing -------------------------------------------------------- #
+    def _start_resize(self, event) -> None:
+        self._resize_anchor = {"x": event.x_root, "w": self.width}
+
+    def _on_resize(self, event) -> None:
+        dx = event.x_root - self._resize_anchor["x"]
+        self.apply_width(self._resize_anchor["w"] + dx, from_grip=True)
+
+    def apply_width(self, width, from_grip: bool = False) -> None:
+        width = self._clamp_width(width)
+        self.width = width
+        inner = self.width - 2 * PAD
+        for card in self.cards.values():
+            card.relayout(inner)
+        self._resize(len(self.cards))
+        if from_grip and getattr(self, "width_scale", None) is not None \
+                and self.settings_win is not None and self.settings_win.winfo_exists():
+            self._suspend_width = True
+            try:
+                self.width_scale.set(width)
+            finally:
+                self._suspend_width = False
+
     # ---- toggles --------------------------------------------------------- #
-    def toggle_pin(self) -> None:
-        self.pinned = not self.pinned
+    def set_pinned(self, value) -> None:
+        self.pinned = bool(value)
         self.root.attributes("-topmost", self.pinned)
         self.btn_pin.config(fg=ACCENT if self.pinned else MUTED)
+        if getattr(self, "var_pin", None) is not None:
+            self.var_pin.set(self.pinned)
 
-    def toggle_compact(self) -> None:
-        self.compact = not self.compact
+    def toggle_pin(self) -> None:
+        self.set_pinned(not self.pinned)
+
+    def set_compact(self, value) -> None:
+        value = bool(value)
+        if value == self.compact:
+            return
+        self.compact = value
         self._last_keys = ()   # force rebuild at new height
         self.refresh()
+        if getattr(self, "var_compact", None) is not None:
+            self.var_compact.set(self.compact)
+
+    def toggle_compact(self) -> None:
+        self.set_compact(not self.compact)
 
     def set_interval(self, ms: int) -> None:
         self.interval = ms
+
+    def set_alpha(self, value: float) -> None:
+        self.alpha = max(0.2, min(1.0, float(value)))
+        try:
+            self.root.attributes("-alpha", self.alpha)
+        except tk.TclError:
+            pass
+
+    def reset_position(self) -> None:
+        self.root.geometry("+60+60")
+
+    # ---- settings window ------------------------------------------------- #
+    def open_settings(self) -> None:
+        if self.settings_win is not None and self.settings_win.winfo_exists():
+            self.settings_win.deiconify()
+            self.settings_win.lift()
+            self.settings_win.focus_force()
+            return
+
+        win = tk.Toplevel(self.root)
+        self.settings_win = win
+        win.title(f"{APP_NAME} · Settings")
+        win.configure(bg=BG)
+        win.resizable(False, False)
+        win.attributes("-topmost", True)
+        win.geometry(f"+{self.root.winfo_x() + 24}+{self.root.winfo_y() + 24}")
+        win.protocol("WM_DELETE_WINDOW", self._close_settings)
+
+        head = tk.Frame(win, bg=HEADER_BG)
+        head.pack(fill="x")
+        tk.Label(head, text="  ⚙  Settings", bg=HEADER_BG, fg=FG,
+                 font=self.font_title).pack(side="left", padx=10, pady=9)
+
+        body = tk.Frame(win, bg=BG)
+        body.pack(fill="both", expand=True)
+
+        def heading(text):
+            tk.Label(body, text=text.upper(), bg=BG, fg=MUTED, font=self.font_small,
+                     anchor="w").pack(fill="x", padx=16, pady=(14, 4))
+
+        def toggle(text, value, cmd):
+            var = tk.BooleanVar(value=value)
+            tk.Checkbutton(
+                body, text="  " + text, variable=var, command=lambda: cmd(var),
+                bg=BG, fg=FG, selectcolor=CARD, activebackground=BG,
+                activeforeground=FG, font=self.font_name, anchor="w",
+                highlightthickness=0, bd=0, padx=8).pack(fill="x", padx=14, pady=1)
+            return var
+
+        def slider(text, frm, to, res, value, cmd):
+            row = tk.Frame(body, bg=BG)
+            row.pack(fill="x", padx=16, pady=(2, 2))
+            tk.Label(row, text=text, bg=BG, fg=FG, font=self.font_name,
+                     anchor="w").pack(fill="x")
+            scl = tk.Scale(row, from_=frm, to=to, resolution=res, orient="horizontal",
+                           bg=BG, fg=MUTED, troughcolor=TRACK, highlightthickness=0,
+                           bd=0, sliderrelief="flat", activebackground=ACCENT,
+                           font=self.font_small, length=280)
+            scl.set(value)
+            scl.config(command=cmd)
+            scl.pack(fill="x")
+            return scl
+
+        def action(text, cmd, fg=FG):
+            b = tk.Label(body, text=text, bg=CARD, fg=fg, font=self.font_name,
+                         cursor="hand2", pady=9)
+            b.pack(fill="x", padx=14, pady=4)
+            b.bind("<Button-1>", lambda _e: cmd())
+            b.bind("<Enter>", lambda _e: b.config(bg=CARD_HOVER))
+            b.bind("<Leave>", lambda _e: b.config(bg=CARD))
+            return b
+
+        heading("Behaviour")
+        self.var_autostart = toggle("Start on login", is_autostart_enabled(),
+                                    self._on_autostart_toggle)
+        self.var_pin = toggle("Always on top", self.pinned,
+                              lambda v: self.set_pinned(v.get()))
+        self.var_compact = toggle("Compact view", self.compact,
+                                  lambda v: self.set_compact(v.get()))
+
+        heading("Update speed")
+        slider("Refresh interval (seconds)", 0.3, 5.0, 0.1, self.interval / 1000.0,
+               lambda val: self.set_interval(int(round(float(val) * 1000))))
+
+        heading("Appearance")
+        slider("Opacity", 0.3, 1.0, 0.05, self.alpha,
+               lambda val: self.set_alpha(val))
+        self.width_scale = slider("Width", MIN_WIDTH, MAX_WIDTH, 2, self.width,
+                                  self._on_width_slider)
+
+        heading("Window")
+        action("Reset position", self.reset_position)
+        action("Open settings folder", lambda: open_in_files(CONFIG_DIR))
+
+        heading("Danger zone")
+        action("Uninstall Disk Monitor…", self.uninstall, fg=DANGER)
+
+        tk.Frame(body, bg=BG, height=10).pack()
+
+    def _close_settings(self) -> None:
+        if self.settings_win is not None:
+            self.settings_win.destroy()
+            self.settings_win = None
+
+    def _on_autostart_toggle(self, var: tk.BooleanVar) -> None:
+        if not set_autostart(var.get()):
+            var.set(is_autostart_enabled())
+            messagebox.showwarning(
+                APP_NAME, "Could not update the autostart entry.",
+                parent=self.settings_win or self.root)
+
+    def _on_width_slider(self, val) -> None:
+        if self._suspend_width:
+            return
+        self.apply_width(val)
+
+    def uninstall(self) -> None:
+        parent = self.settings_win or self.root
+        msg = (
+            "This removes the app launcher, the autostart entry and your "
+            "saved settings.\n\n"
+            "The program files in\n"
+            f"    {os.path.dirname(SCRIPT_PATH)}\n"
+            "are NOT deleted — remove that folder by hand if you want.\n\n"
+            "Uninstall now? The widget will close afterwards."
+        )
+        if not messagebox.askyesno(f"Uninstall {APP_NAME}", msg, parent=parent):
+            return
+        notes = perform_uninstall()
+        messagebox.showinfo(
+            "Uninstalled",
+            f"{APP_NAME} has been uninstalled.\n\n" + "\n".join(notes)
+            + f"\n\nProgram folder kept at:\n    {os.path.dirname(SCRIPT_PATH)}",
+            parent=parent)
+        # Skip quit()'s config save — we just deleted the config on purpose.
+        self.root.destroy()
 
     # ---- geometry / fx --------------------------------------------------- #
     def _restore_position(self) -> None:
@@ -458,10 +742,10 @@ class DiskMonitorApp:
         body_h = (PAD + n_rows * (card_h + CARD_GAP) + (PAD - CARD_GAP)) if n_rows \
             else PAD * 2
         height = 1 + HEADER_H + 3 + body_h + 1
-        self.root.geometry(f"{WIDTH}x{height}")
+        self.root.geometry(f"{self.width}x{height}")
 
     def _fade_in(self, step: int) -> None:
-        target = ALPHA
+        target = self.alpha
         val = min(target, step * (target / 12))
         try:
             self.root.attributes("-alpha", val)
@@ -500,7 +784,8 @@ class DiskMonitorApp:
         self.cfg.update({
             "x": self.root.winfo_x(), "y": self.root.winfo_y(),
             "interval_ms": self.interval, "pinned": self.pinned,
-            "compact": self.compact,
+            "compact": self.compact, "width": self.width,
+            "alpha": round(self.alpha, 3),
         })
         save_config(self.cfg)
         self.root.destroy()
