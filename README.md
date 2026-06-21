@@ -9,7 +9,7 @@ work, no matter what app is in front.
 
 ```
 ┌────────────────────────────────────┐
-│ ● Disk Monitor            📌 ▭ ✕    │
+│ ● Disk Monitor          ⚙ 📌 ▭ ✕   │
 ├────────────────────────────────────┤
 │ Root  (/)              ▲ 12 MB  98% │
 │ ███████████████████████████████░    │
@@ -33,7 +33,15 @@ work, no matter what app is in front.
   transitions, per-drive icons (🐧 Linux · 🪟 Windows · 🔌 removable · ⚙ boot),
   a gradient accent header, and a soft fade-in on launch.
 - **Frameless & draggable** — drag from anywhere to reposition it.
-- **Remembers its place** — position, refresh speed, and view mode persist.
+- **Resizable** — drag the corner grip (or the Width slider in Settings) to size
+  it to your taste; the width is remembered.
+- **Settings panel** (⚙) — a polished dark dialog with everything in one place:
+  start-on-login, always-on-top, compact view, refresh interval, opacity, width,
+  reset position, open settings folder, and a one-click **Uninstall**.
+- **Start on login** — flip one switch to launch the widget automatically at
+  every login (writes/removes a `~/.config/autostart` entry for you).
+- **Remembers its place** — position, size, opacity, refresh speed, and view
+  mode all persist.
 - **Auto-detects USB drives** — plug one in and it appears; unplug and it goes.
 - **Zero heavy dependencies** — pure Python (Tkinter, already on most distros)
   plus `psutil`.
@@ -138,7 +146,12 @@ After it runs, search your apps for **“Disk Space Monitor”**.
 
 ## Start automatically at login
 
-Copy the launcher into your autostart folder:
+The easiest way: open **Settings** (⚙ in the header) and turn on
+**Start on login**. That writes a correct, absolute-path autostart entry to
+`~/.config/autostart/disk-space-monitor.desktop` for you — turn the switch back
+off to remove it.
+
+Prefer to do it by hand?
 ```bash
 mkdir -p ~/.config/autostart
 cp disk-space-monitor.desktop ~/.config/autostart/
@@ -171,12 +184,32 @@ To run later: `source .venv/bin/activate && python disk_monitor.py`.
 | Action | How |
 | --- | --- |
 | Move the widget | Click & drag anywhere on it |
+| Resize the widget | Drag the grip in the bottom-right corner |
+| Open Settings | ⚙ button (or right-click → *Settings…*) |
 | Open a drive in your file manager | Double-click its row |
 | Options menu | Right-click anywhere |
-| Toggle always-on-top | 📌 button (or right-click menu) |
-| Compact view (hide details) | ▭ button (or right-click menu) |
-| Change update speed (0.5s–5s) | Right-click → *Update speed* |
+| Toggle always-on-top | 📌 button (or Settings / right-click menu) |
+| Compact view (hide details) | ▭ button (or Settings / right-click menu) |
+| Change update speed (0.5s–5s) | Settings, or right-click → *Update speed* |
 | Close | ✕ button (or right-click → *Quit*) |
+
+---
+
+# 🎛️ Settings
+
+Click the ⚙ button (or right-click → *Settings…*) to open the Settings panel:
+
+| Setting | What it does |
+| --- | --- |
+| **Start on login** | Launch the widget automatically every login (toggles the `~/.config/autostart` entry) |
+| **Always on top** | Keep the widget floating above other windows |
+| **Compact view** | Hide the size/free details for a slimmer widget |
+| **Refresh interval** | How often usage is re-read, 0.3s – 5s |
+| **Opacity** | Window transparency, 0.3 – 1.0 (applies live) |
+| **Width** | Widget width, 280 – 760 px (applies live; same as the corner grip) |
+| **Reset position** | Snap the widget back to the top-left |
+| **Open settings folder** | Open `~/.config/disk-space-monitor` in your file manager |
+| **Uninstall Disk Monitor…** | Remove the launcher, autostart entry and saved settings, then close (asks first; leaves the program files) |
 
 ---
 
@@ -186,9 +219,9 @@ Settings persist automatically to:
 ```
 ~/.config/disk-space-monitor/config.json
 ```
-It stores window position (`x`, `y`), refresh interval (`interval_ms`),
-always-on-top state (`pinned`), and compact mode (`compact`). **Delete this file
-to reset to defaults.**
+It stores window position (`x`, `y`), size (`width`), opacity (`alpha`), refresh
+interval (`interval_ms`), always-on-top state (`pinned`), and compact mode
+(`compact`). **Delete this file to reset to defaults.**
 
 To change colours, default size, fill thresholds, or which filesystems are
 hidden, edit the constants near the top of `disk_monitor.py`.
@@ -243,6 +276,18 @@ partitions it can’t read rather than crashing.
 
 # 🗑️ Uninstall
 
+**Easiest:** open **Settings** (⚙) → **Uninstall Disk Monitor…**. It asks for
+confirmation, then removes the launcher, the autostart entry and your saved
+settings, and closes. (It intentionally leaves the program files so you can
+delete the folder yourself.)
+
+**From a terminal:** run the bundled script —
+```bash
+./uninstall.sh
+```
+which does the same launcher/autostart/settings cleanup.
+
+**By hand**, if you prefer:
 ```bash
 # remove the app launcher (if you ran install.sh)
 rm -f ~/.local/share/applications/disk-space-monitor.desktop
