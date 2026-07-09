@@ -33,11 +33,25 @@ work, no matter what app is in front.
   transitions, per-drive icons (🐧 Linux · 🪟 Windows · 🔌 removable · ⚙ boot),
   a gradient accent header, and a soft fade-in on launch.
 - **Frameless & draggable** — drag from anywhere to reposition it.
+- **Window controls** — **minimize** (`—`) to the taskbar and **maximize** (`▢`)
+  to fill the current monitor, right where you'd expect them in the top-right.
+  Maximizing reflows the cards into a responsive multi-column grid.
+- **Disk-full alerts** — get a desktop notification when any disk crosses a
+  threshold you choose (default 90%).
+- **Live disk I/O** — see per-drive read/write throughput (`↓ … ↑ …`), not just
+  space.
+- **Light & dark themes** — pick the look you like; the choice is remembered.
+- **Find what's eating space** — right-click a drive → **Find largest items
+  here…** to scan and list the biggest files/folders (runs in the background).
+- **Copy usage report** — grab a plain-text summary of every drive to your
+  clipboard from the right-click menu.
+- **Pause / resume** — freeze updates whenever you like.
 - **Resizable** — drag the corner grip (or the Width slider in Settings) to size
   it to your taste; the width is remembered.
-- **Settings panel** (⚙) — a polished dark dialog with everything in one place:
-  start-on-login, always-on-top, compact view, refresh interval, opacity, width,
-  reset position, open settings folder, and a one-click **Uninstall**.
+- **Settings panel** (⚙) — a polished dialog with everything in one place:
+  start-on-login, always-on-top, compact view, theme, alerts, disk I/O, refresh
+  interval, opacity, width, maximize/restore, reset position, open settings
+  folder, and a one-click **Uninstall**.
 - **Start on login** — flip one switch to launch the widget automatically at
   every login (writes/removes a `~/.config/autostart` entry for you).
 - **Remembers its place** — position, size, opacity, refresh speed, and view
@@ -185,8 +199,14 @@ To run later: `source .venv/bin/activate && python disk_monitor.py`.
 | --- | --- |
 | Move the widget | Click & drag anywhere on it |
 | Resize the widget | Drag the grip in the bottom-right corner |
+| Minimize to the taskbar | `—` button |
+| Maximize / restore | `▢` button (fills the current monitor) |
 | Open Settings | ⚙ button (or right-click → *Settings…*) |
 | Open a drive in your file manager | Double-click its row |
+| Find largest files/folders | Right-click a drive → *Find largest items here…* |
+| Copy a usage report | Right-click → *Copy usage report* |
+| Pause / resume updates | Right-click → *Pause / resume updates* |
+| Switch light / dark theme | Right-click → *Switch light / dark theme* (or Settings) |
 | Options menu | Right-click anywhere |
 | Toggle always-on-top | 📌 button (or Settings / right-click menu) |
 | Compact view (hide details) | ▭ button (or Settings / right-click menu) |
@@ -204,9 +224,15 @@ Click the ⚙ button (or right-click → *Settings…*) to open the Settings pan
 | **Start on login** | Launch the widget automatically every login (toggles the `~/.config/autostart` entry) |
 | **Always on top** | Keep the widget floating above other windows |
 | **Compact view** | Hide the size/free details for a slimmer widget |
+| **Pause updates** | Freeze the refresh loop (a `⏸` shows in the title) |
+| **Show disk I/O speeds** | Show per-drive read/write throughput on each card |
+| **Disk-full desktop alerts** | Notify when a disk crosses the threshold below |
+| **Alert threshold (%)** | The usage level that triggers an alert, 50 – 99 |
+| **Light theme** | Switch between the dark and light palettes |
 | **Refresh interval** | How often usage is re-read, 0.3s – 5s |
 | **Opacity** | Window transparency, 0.3 – 1.0 (applies live) |
 | **Width** | Widget width, 280 – 760 px (applies live; same as the corner grip) |
+| **Maximize / restore** | Fill the current monitor, or return to the previous size |
 | **Reset position** | Snap the widget back to the top-left |
 | **Open settings folder** | Open `~/.config/disk-space-monitor` in your file manager |
 | **Uninstall Disk Monitor…** | Remove the launcher, autostart entry and saved settings, then close (asks first; leaves the program files) |
@@ -220,8 +246,10 @@ Settings persist automatically to:
 ~/.config/disk-space-monitor/config.json
 ```
 It stores window position (`x`, `y`), size (`width`), opacity (`alpha`), refresh
-interval (`interval_ms`), always-on-top state (`pinned`), and compact mode
-(`compact`). **Delete this file to reset to defaults.**
+interval (`interval_ms`), always-on-top state (`pinned`), compact mode
+(`compact`), the `theme`, disk-alert settings (`alerts_enabled`,
+`alert_threshold`), and whether disk I/O is shown (`show_io`).
+**Delete this file to reset to defaults.**
 
 To change colours, default size, fill thresholds, or which filesystems are
 hidden, edit the constants near the top of `disk_monitor.py`.
