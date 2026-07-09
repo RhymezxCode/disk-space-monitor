@@ -33,8 +33,9 @@ work, no matter what app is in front.
   transitions, per-drive icons (🐧 Linux · 🪟 Windows · 🔌 removable · ⚙ boot),
   a gradient accent header, and a soft fade-in on launch.
 - **Frameless & draggable** — drag from anywhere to reposition it.
-- **Window controls** — **minimize** (`—`) to the taskbar and **maximize** (`▢`)
-  to fill the current monitor, right where you'd expect them in the top-right.
+- **Window controls** — **minimize** (`—`) collapses the widget to just its
+  title bar (double-click the header does the same), and **maximize** (`▢`)
+  fills the current monitor, right where you'd expect them in the top-right.
   Maximizing reflows the cards into a responsive multi-column grid.
 - **Disk-full alerts** — get a desktop notification when any disk crosses a
   threshold you choose (default 90%).
@@ -199,7 +200,7 @@ To run later: `source .venv/bin/activate && python disk_monitor.py`.
 | --- | --- |
 | Move the widget | Click & drag anywhere on it |
 | Resize the widget | Drag the grip in the bottom-right corner |
-| Minimize to the taskbar | `—` button |
+| Collapse to the title bar | `—` button (or double-click the header) |
 | Maximize / restore | `▢` button (fills the current monitor) |
 | Open Settings | ⚙ button (or right-click → *Settings…*) |
 | Open a drive in your file manager | Double-click its row |

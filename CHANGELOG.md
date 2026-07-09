@@ -5,6 +5,27 @@ All notable changes to **Disk Space Monitor** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-07-09
+
+Fixes to the new window controls after real-world testing on GNOME/Wayland.
+
+### Changed
+
+- **Minimize now collapses the widget to its title bar** (window-shade) instead
+  of attempting a taskbar minimize. A frameless, always-on-top overlay has no
+  reliable taskbar button on GNOME/Wayland, and the previous approach left a
+  stray, iconless entry in the dock. Click `—` (or double-click the header) to
+  collapse/expand.
+
+### Fixed
+
+- **Removed the stray dock/taskbar square** that appeared when minimizing — the
+  window no longer hands itself to the window manager.
+- **Maximize now clearly fills the screen**: cards spread out and centre across
+  the maximized area instead of clustering at the top-left, the column count is
+  capped to the number of drives, and monitor selection now picks the single
+  screen the widget overlaps most (never the multi-monitor union).
+
 ## [1.1.0] - 2026-07-09
 
 A window-controls and features release: the widget now behaves more like a

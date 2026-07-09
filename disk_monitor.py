@@ -15,7 +15,7 @@ License: MIT
 
 from __future__ import annotations
 
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 
 import json
 import os
@@ -487,7 +487,7 @@ class DiskMonitorApp:
 
         # window-state + feature state
         self.maximized = False
-        self._minimized = False
+        self.shaded = False
         self.paused = False
         self.cols = 1
         self._normal: tuple[int, int, int] | None = None   # (width, x, y) pre-maximize
@@ -516,7 +516,6 @@ class DiskMonitorApp:
 
         self._build_ui()
         self._restore_position()
-        self.root.bind("<Map>", self._on_map)
         self._tick()
         self._animate()
         self._fade_in(0)
@@ -569,6 +568,7 @@ class DiskMonitorApp:
         for w in (hdr, title):
             self.make_draggable(w)
             w.bind("<Button-3>", self.show_menu)
+            w.bind("<Double-Button-1>", lambda _e: self.minimize())  # shade/expand
 
         # gradient accent line under the header
         accent = tk.Canvas(self.outer, height=3, bg=HEADER_BG,
@@ -723,38 +723,28 @@ class DiskMonitorApp:
         return "  ⏸  Disk Monitor" if getattr(self, "paused", False) \
             else "  💽  Disk Monitor"
 
-    # ---- window state: minimize / maximize ------------------------------- #
+    # ---- window state: minimize (shade) / maximize ----------------------- #
     def minimize(self) -> None:
-        """Minimize to the taskbar. A borderless (overrideredirect) window has
-        no taskbar button and iconify() is a no-op on it, so hand the window
-        back to the WM first; _on_map re-applies the custom chrome on restore."""
-        self._saved_geom = self.root.geometry()
-        self._minimized = True
-        try:
-            self.root.overrideredirect(False)
-            self.root.update_idletasks()
-            self.root.iconify()
-        except tk.TclError:
-            self._minimized = False
+        """Collapse the widget to just its title bar (a.k.a. window-shade), and
+        toggle back. A frameless, always-on-top overlay has no real taskbar
+        button on GNOME/Wayland, and forcing one leaves a stray, iconless dock
+        entry — so 'minimize' rolls the widget up in place instead."""
+        self._apply_shade(not self.shaded)
 
-    def _on_map(self, event=None) -> None:
-        if event is not None and event.widget is not self.root:
-            return
-        if not self._minimized:
-            return
-        self._minimized = False
-
-        def _restore_chrome() -> None:
-            try:
-                self.root.overrideredirect(True)
-                if getattr(self, "_saved_geom", None):
-                    self.root.geometry(self._saved_geom)
-                self.root.attributes("-topmost", self.pinned)
-                self.root.attributes("-alpha", self.alpha)
-            except tk.TclError:
-                pass
-
-        self.root.after(10, _restore_chrome)
+    def _apply_shade(self, value: bool) -> None:
+        self.shaded = value
+        if value:
+            self.body.pack_forget()
+            self._grip.place_forget()
+            self.btn_min.config(fg=ACCENT)             # lit = collapsed; click to expand
+            height = 1 + HEADER_H + 3 + 1              # borders + header + accent
+            self.root.geometry(f"{self.width}x{height}")
+        else:
+            self.body.pack(fill="both", expand=True,
+                           padx=PAD, pady=(PAD, PAD - CARD_GAP))
+            self._grip.place(relx=1.0, rely=1.0, x=-2, y=-2, anchor="se")
+            self.btn_min.config(fg=MUTED)
+            self._relayout_all()
 
     def _work_area(self) -> tuple[int, int, int, int]:
         """Global work area (x, y, w, h) excluding panels, via _NET_WORKAREA.
@@ -788,21 +778,30 @@ class DiskMonitorApp:
 
     def _current_area(self) -> tuple[int, int, int, int]:
         """Work area of the monitor the window sits on (multi-monitor aware).
-        Uses the monitor rectangle for x/width and clips the vertical band to
-        the global work area so a top/bottom panel is respected. Falls back to
-        the global work area (single-monitor case)."""
+        Picks the single monitor the widget overlaps most (never the union of
+        all monitors), then clips the vertical band to the global work area so a
+        top/bottom panel is respected. Falls back to the global work area."""
         wx, wy, ww, wh = self._work_area()
         mons = self._monitors()
-        if len(mons) > 1:
-            cx = self.root.winfo_x() + self.root.winfo_width() // 2
-            cy = self.root.winfo_y() + self.root.winfo_height() // 2
+        if mons:
+            rx, ry = self.root.winfo_x(), self.root.winfo_y()
+            rw, rh = self.root.winfo_width(), self.root.winfo_height()
+            cx, cy = rx + rw // 2, ry + rh // 2
+            best, best_score = None, -1
             for (mx, my, mw, mh) in mons:
-                if mx <= cx < mx + mw and my <= cy < my + mh:
-                    top = max(my, wy)
-                    bot = min(my + mh, wy + wh)
-                    if bot - top < mh // 2:             # struts don't apply here
-                        top, bot = my, my + mh
-                    return mx, top, mw, bot - top
+                ox = max(0, min(rx + rw, mx + mw) - max(rx, mx))
+                oy = max(0, min(ry + rh, my + mh) - max(ry, my))
+                contains = mx <= cx < mx + mw and my <= cy < my + mh
+                score = ox * oy + (1 << 40 if contains else 0)
+                if score > best_score:
+                    best, best_score = (mx, my, mw, mh), score
+            if best:
+                mx, my, mw, mh = best
+                top = max(my, wy)
+                bot = min(my + mh, wy + wh)
+                if bot - top < mh // 2:                 # struts don't apply here
+                    top, bot = my, my + mh
+                return mx, top, mw, bot - top
         return wx, wy, ww, wh
 
     def toggle_maximize(self) -> None:
@@ -811,6 +810,8 @@ class DiskMonitorApp:
     def maximize(self) -> None:
         if self.maximized:
             return
+        if self.shaded:
+            self._apply_shade(False)
         self._normal = (self.width, self.root.winfo_x(), self.root.winfo_y())
         x, y, w, h = self._current_area()
         self.maximized = True
@@ -835,23 +836,34 @@ class DiskMonitorApp:
     # ---- card layout (grid: 1 column, or N columns when maximized) ------- #
     def _relayout_all(self) -> None:
         cards = list(self.cards.values())
+        n = len(cards)
         avail = max(MIN_WIDTH, self.width) - 2 - 2 * PAD
         cols = 1
-        if self.maximized:
-            cols = max(1, (avail + CARD_GAP) // (MIN_CARD + CARD_GAP))
+        if self.maximized and n:
+            # never make more columns than there are cards
+            cols = max(1, min(n, (avail + CARD_GAP) // (MIN_CARD + CARD_GAP)))
         self.cols = cols
         cell = (avail - (cols - 1) * CARD_GAP) // cols
+        rows = (n + cols - 1) // cols if cols else 0
+
         for c in range(cols):
             self.body.grid_columnconfigure(c, weight=1, uniform="cards")
         for c in range(cols, 64):
             self.body.grid_columnconfigure(c, weight=0, uniform="")
+        # When maximized, weight the rows so the cards spread out and centre to
+        # fill the screen instead of clustering at the top-left.
+        for r in range(max(rows, 1)):
+            self.body.grid_rowconfigure(r, weight=1 if self.maximized else 0)
+        for r in range(rows, 64):
+            self.body.grid_rowconfigure(r, weight=0)
+
+        sticky = "" if self.maximized else "n"   # centre in the cell when maximized
         for i, card in enumerate(cards):
             card.relayout(cell)
             card.cv.grid(
                 row=i // cols, column=i % cols,
                 padx=(0 if i % cols == 0 else CARD_GAP, 0),
-                pady=(0, CARD_GAP), sticky="n")
-        rows = (len(cards) + cols - 1) // cols if cols else 0
+                pady=(0, CARD_GAP), sticky=sticky)
         self._resize(rows)
 
     # ---- theme ----------------------------------------------------------- #
@@ -880,6 +892,8 @@ class DiskMonitorApp:
         self.outer.destroy()
         self._build_ui()
         self.refresh()
+        if self.shaded:                 # preserve a collapsed widget across theme swap
+            self._apply_shade(True)
 
     # ---- extras: copy report / pause ------------------------------------ #
     def copy_report(self) -> None:
@@ -1176,8 +1190,8 @@ class DiskMonitorApp:
         self.root.geometry(f"+{int(x)}+{int(y)}" if x is not None else "+60+60")
 
     def _resize(self, n_rows: int) -> None:
-        if self.maximized:
-            return   # size is pinned to the work area while maximized
+        if self.maximized or self.shaded:
+            return   # size is pinned (work area when maximized, header when shaded)
         card_h = CARD_H_COMPACT if self.compact else CARD_H
         body_h = (PAD + n_rows * (card_h + CARD_GAP) + (PAD - CARD_GAP)) if n_rows \
             else PAD * 2
