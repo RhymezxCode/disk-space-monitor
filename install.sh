@@ -33,6 +33,7 @@ Icon=drive-harddisk
 Terminal=false
 Categories=System;Monitor;Utility;
 StartupNotify=false
+StartupWMClass=Disk-space-monitor
 EOF
 chmod +x "$DESKTOP_FILE" "$DIR/disk_monitor.py" "$DIR/run.sh" 2>/dev/null || true
 

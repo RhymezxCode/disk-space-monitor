@@ -15,7 +15,7 @@ License: MIT
 
 from __future__ import annotations
 
-__version__ = "1.1.2"
+__version__ = "1.1.3"
 
 import json
 import os
@@ -106,6 +106,7 @@ ALERT_HYSTERESIS = 5         # re-arm an alert only after it drops this far belo
 MIN_VISIBLE = 120            # px of the widget that must stay grabbable on a monitor
 
 APP_ID = "disk-space-monitor"
+WM_CLASS_NAME = "disk-space-monitor"   # must match StartupWMClass in the .desktop
 APP_NAME = "Disk Space Monitor"
 SCRIPT_PATH = os.path.abspath(__file__)
 PYTHON_BIN = sys.executable or "python3"
@@ -229,6 +230,7 @@ def set_autostart(enabled: bool) -> bool:
                 f"Exec={PYTHON_BIN} {SCRIPT_PATH}\n"
                 "Icon=drive-harddisk\n"
                 "Terminal=false\n"
+                f"StartupWMClass={WM_CLASS_NAME.capitalize()}\n"
                 "X-GNOME-Autostart-enabled=true\n"
             )
             with open(AUTOSTART_PATH, "w", encoding="utf-8") as fh:
@@ -497,14 +499,16 @@ class DiskMonitorApp:
         self._io_prev: dict[str, tuple[int, int]] = {}
         self._io_time: float | None = None
 
-        self.root = tk.Tk()
+        # className becomes WM_CLASS, which is how the dock/taskbar matches this
+        # window to disk-space-monitor.desktop (StartupWMClass) for its icon.
+        self.root = tk.Tk(className=WM_CLASS_NAME)
         self.root.title(APP_NAME)
-        self.root.overrideredirect(True)
-        self.root.attributes("-topmost", self.pinned)
         try:
             self.root.attributes("-alpha", 0.0)   # start invisible for fade-in
-        except tk.TclError:
-            pass
+        except tk.TclError:                       # ...and stay invisible while
+            pass                                  # _make_frameless maps the window
+        self.managed = self._make_frameless()
+        self.root.attributes("-topmost", self.pinned)
 
         self.font_name = tkfont.Font(family="DejaVu Sans", size=10, weight="bold")
         self.font_pct = tkfont.Font(family="DejaVu Sans", size=12, weight="bold")
@@ -730,13 +734,20 @@ class DiskMonitorApp:
         return "  ⏸  Disk Monitor" if getattr(self, "paused", False) \
             else "  💽  Disk Monitor"
 
-    # ---- window state: minimize (shade) / maximize ----------------------- #
+    # ---- window state: minimize / maximize -------------------------------- #
     def minimize(self) -> None:
-        """Collapse the widget to just its title bar (a.k.a. window-shade), and
-        toggle back. A frameless, always-on-top overlay has no real taskbar
-        button on GNOME/Wayland, and forcing one leaves a stray, iconless dock
-        entry — so 'minimize' rolls the widget up in place instead."""
-        self._apply_shade(not self.shaded)
+        """Hide the widget to the taskbar; restore it from the dock or Alt-Tab.
+
+        Where the window couldn't be kept WM-managed (see _make_frameless) there
+        is no taskbar button to restore from, so minimizing there would strand
+        the widget. Those setups collapse it to its title bar instead, which is
+        reversible in place."""
+        if self.managed:
+            if self.shaded:
+                self._apply_shade(False)
+            self.root.iconify()
+        else:
+            self._apply_shade(not self.shaded)
 
     def _apply_shade(self, value: bool) -> None:
         self.shaded = value
@@ -1199,6 +1210,54 @@ class DiskMonitorApp:
             parent=parent)
         # Skip quit()'s config save — we just deleted the config on purpose.
         self.root.destroy()
+
+    # ---- window chrome ---------------------------------------------------- #
+    def _wrapper_window(self) -> str | None:
+        """Tk nests each toplevel inside a wrapper window, and it is the wrapper
+        the window manager reads properties from — winfo_id() returns the inner
+        window, whose properties the WM ignores."""
+        inner = hex(self.root.winfo_id())
+        try:
+            out = subprocess.run(["xwininfo", "-id", inner, "-tree"],
+                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                 text=True, timeout=5).stdout
+        except (OSError, subprocess.SubprocessError):
+            return None
+        m = re.search(r"Parent window id:\s*(0x[0-9a-fA-F]+)", out)
+        return m.group(1) if m else None
+
+    def _make_frameless(self) -> bool:
+        """Strip decorations while staying WM-managed, so the widget keeps a
+        taskbar entry and iconify() is a real minimize.
+
+        overrideredirect(True) also hides the title bar, but it unmanages the
+        window entirely: no taskbar button, and iconify() silently does nothing.
+        Asking the WM for zero decorations via _MOTIF_WM_HINTS keeps it managed.
+        Returns False (and falls back to overrideredirect) wherever that hint
+        can't be set — non-X11 sessions, or WMs that ignore Motif hints."""
+        if shutil.which("xprop") and shutil.which("xwininfo"):
+            try:
+                self.root.withdraw()
+                self.root.update()               # realize, creating the wrapper
+                wrapper = self._wrapper_window()
+                if wrapper:
+                    rc = subprocess.run(
+                        ["xprop", "-id", wrapper, "-f", "_MOTIF_WM_HINTS", "32c",
+                         # flags=MWM_HINTS_DECORATIONS, decorations=none
+                         "-set", "_MOTIF_WM_HINTS", "0x2, 0x0, 0x0, 0x0, 0x0"],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                        timeout=5).returncode
+                    if rc == 0:
+                        self.root.deiconify()
+                        return True
+            except (OSError, subprocess.SubprocessError, tk.TclError):
+                pass
+            try:
+                self.root.deiconify()            # don't leave it withdrawn
+            except tk.TclError:
+                pass
+        self.root.overrideredirect(True)
+        return False
 
     # ---- geometry / fx --------------------------------------------------- #
     def _screen_rects(self) -> list[tuple[int, int, int, int]]:

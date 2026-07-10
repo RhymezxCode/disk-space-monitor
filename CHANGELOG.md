@@ -5,6 +5,30 @@ All notable changes to **Disk Space Monitor** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.3] - 2026-07-10
+
+Minimize is now a real taskbar minimize, and the dock finally shows the app's icon.
+
+### Changed
+
+- **Minimize (`—`) now hides the widget to the taskbar** like a normal window,
+  rather than collapsing it to its title bar in place. Restore it from the dock
+  or Alt-Tab. The widget stays borderless: instead of `overrideredirect`, which
+  removes decorations by unmanaging the window entirely (no taskbar button, and
+  `iconify()` silently does nothing), it now asks the window manager for zero
+  decorations via `_MOTIF_WM_HINTS` and stays managed.
+- Window managers that ignore that hint fall back to the previous frameless
+  behaviour, where `—` collapses the widget to its title bar — minimizing there
+  would strand it with no taskbar button to restore from.
+
+### Fixed
+
+- **The dock/taskbar entry now shows the disk icon instead of a blank square.**
+  The window sets a stable `WM_CLASS` (`Disk-space-monitor`), and the desktop
+  entries declare a matching `StartupWMClass`, so the shell can pair the window
+  with `disk-space-monitor.desktop`. Previously nothing matched, and GNOME drew
+  an anonymous placeholder.
+
 ## [1.1.2] - 2026-07-10
 
 Fixes two problems that compound each other: the widget could start off-screen,
@@ -187,6 +211,7 @@ for Linux that tracks every real partition in real time.
 - **Minimal dependencies** — pure Python with Tkinter plus `psutil>=5.9`.
 - **MIT licensed.**
 
+[1.1.3]: https://github.com/RhymezxCode/disk-space-monitor/releases/tag/v1.1.3
 [1.1.2]: https://github.com/RhymezxCode/disk-space-monitor/releases/tag/v1.1.2
 [1.1.1]: https://github.com/RhymezxCode/disk-space-monitor/releases/tag/v1.1.1
 [1.1.0]: https://github.com/RhymezxCode/disk-space-monitor/releases/tag/v1.1.0
