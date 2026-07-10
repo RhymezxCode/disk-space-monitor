@@ -5,6 +5,36 @@ All notable changes to **Disk Space Monitor** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.2] - 2026-07-10
+
+Fixes two problems that compound each other: the widget could start off-screen,
+and every invisible copy kept firing desktop alerts.
+
+### Added
+
+- **"Only alert for root (/)" setting** (on by default) — secondary mounts such as
+  Windows volumes and external drives normally sit near-full, so alerting on each
+  of them is noise. Turn it off in Settings to alert on every partition again.
+
+### Changed
+
+- Disk-full alerts are now sent at **normal** urgency instead of **critical**, so
+  they auto-dismiss to the notification tray rather than staying on screen until
+  clicked. Repeat alerts for the same mount now replace the existing banner
+  instead of stacking a new one.
+
+### Fixed
+
+- **The widget no longer starts off-screen when a monitor is disconnected.** The
+  saved window position is now validated against the currently connected monitors;
+  if it would land in dead space (for example, coordinates saved on an external
+  display that has since been unplugged), the widget falls back to the top-left of
+  the primary monitor. Previously it launched successfully but was invisible,
+  which made it look like the app had failed to start.
+- *Reset position* now targets the primary monitor's origin rather than a
+  hard-coded `+60+60`, which was wrong for setups whose primary monitor does not
+  start at `(0, 0)`.
+
 ## [1.1.1] - 2026-07-09
 
 Fixes to the new window controls after real-world testing on GNOME/Wayland.
@@ -157,5 +187,8 @@ for Linux that tracks every real partition in real time.
 - **Minimal dependencies** — pure Python with Tkinter plus `psutil>=5.9`.
 - **MIT licensed.**
 
+[1.1.2]: https://github.com/RhymezxCode/disk-space-monitor/releases/tag/v1.1.2
+[1.1.1]: https://github.com/RhymezxCode/disk-space-monitor/releases/tag/v1.1.1
+[1.1.0]: https://github.com/RhymezxCode/disk-space-monitor/releases/tag/v1.1.0
 [1.0.1]: https://github.com/RhymezxCode/disk-space-monitor/releases/tag/v1.0.1
 [1.0.0]: https://github.com/RhymezxCode/disk-space-monitor/releases/tag/v1.0.0

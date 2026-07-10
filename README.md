@@ -37,8 +37,9 @@ work, no matter what app is in front.
   title bar (double-click the header does the same), and **maximize** (`▢`)
   fills the current monitor, right where you'd expect them in the top-right.
   Maximizing reflows the cards into a responsive multi-column grid.
-- **Disk-full alerts** — get a desktop notification when any disk crosses a
-  threshold you choose (default 90%).
+- **Disk-full alerts** — get a desktop notification when a disk crosses a
+  threshold you choose (default 90%). Only your root filesystem (`/`) is watched
+  by default; flip one setting to watch every partition.
 - **Live disk I/O** — see per-drive read/write throughput (`↓ … ↑ …`), not just
   space.
 - **Light & dark themes** — pick the look you like; the choice is remembered.
@@ -228,6 +229,7 @@ Click the ⚙ button (or right-click → *Settings…*) to open the Settings pan
 | **Pause updates** | Freeze the refresh loop (a `⏸` shows in the title) |
 | **Show disk I/O speeds** | Show per-drive read/write throughput on each card |
 | **Disk-full desktop alerts** | Notify when a disk crosses the threshold below |
+| **Only alert for root (/)** | Ignore secondary mounts, which often sit near-full (on by default) |
 | **Alert threshold (%)** | The usage level that triggers an alert, 50 – 99 |
 | **Light theme** | Switch between the dark and light palettes |
 | **Refresh interval** | How often usage is re-read, 0.3s – 5s |
@@ -249,8 +251,12 @@ Settings persist automatically to:
 It stores window position (`x`, `y`), size (`width`), opacity (`alpha`), refresh
 interval (`interval_ms`), always-on-top state (`pinned`), compact mode
 (`compact`), the `theme`, disk-alert settings (`alerts_enabled`,
-`alert_threshold`), and whether disk I/O is shown (`show_io`).
+`alert_threshold`, `alert_root_only`), and whether disk I/O is shown (`show_io`).
 **Delete this file to reset to defaults.**
+
+The saved position is validated against your connected monitors at startup, so a
+position saved on a display you've since unplugged won't strand the widget
+off-screen — it reappears on your primary monitor instead.
 
 To change colours, default size, fill thresholds, or which filesystems are
 hidden, edit the constants near the top of `disk_monitor.py`.

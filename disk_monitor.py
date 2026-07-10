@@ -15,7 +15,7 @@ License: MIT
 
 from __future__ import annotations
 
-__version__ = "1.1.1"
+__version__ = "1.1.2"
 
 import json
 import os
@@ -103,6 +103,7 @@ DEFAULT_INTERVAL_MS = 1500   # data refresh cadence
 ANIM_MS = 33                 # ~30 fps animation tick
 DEFAULT_ALERT_PCT = 90       # warn when a disk is at/above this %
 ALERT_HYSTERESIS = 5         # re-arm an alert only after it drops this far below
+MIN_VISIBLE = 120            # px of the widget that must stay grabbable on a monitor
 
 APP_ID = "disk-space-monitor"
 APP_NAME = "Disk Space Monitor"
@@ -479,6 +480,7 @@ class DiskMonitorApp:
         self.theme = apply_palette(self.cfg.get("theme", "dark"))
         self.alerts_enabled = bool(self.cfg.get("alerts_enabled", True))
         self.alert_threshold = int(self.cfg.get("alert_threshold", DEFAULT_ALERT_PCT))
+        self.alert_root_only = bool(self.cfg.get("alert_root_only", True))
         self.show_io = bool(self.cfg.get("show_io", True))
 
         self.settings_win: tk.Toplevel | None = None
@@ -704,6 +706,10 @@ class DiskMonitorApp:
         self.alert_threshold = max(50, min(99, int(round(float(value)))))
         self._alerted.clear()   # re-evaluate against the new threshold next tick
 
+    def set_alert_root_only(self, value) -> None:
+        self.alert_root_only = bool(value)
+        self._alerted.clear()   # re-evaluate against the new scope next tick
+
     def set_show_io(self, value) -> None:
         self.show_io = bool(value)
 
@@ -717,7 +723,8 @@ class DiskMonitorApp:
     def reset_position(self) -> None:
         if self.maximized:
             self.restore()
-        self.root.geometry("+60+60")
+        x, y = self._home_position()
+        self.root.geometry(f"+{x}+{y}")
 
     def _title_text(self) -> str:
         return "  ⏸  Disk Monitor" if getattr(self, "paused", False) \
@@ -924,6 +931,10 @@ class DiskMonitorApp:
             return
         thr = self.alert_threshold
         for p in parts:
+            # Secondary mounts (Windows volumes, external drives) sit near-full as a
+            # matter of course; alerting on each of them is noise, not signal.
+            if self.alert_root_only and p.mountpoint != "/":
+                continue
             if p.percent >= thr and p.mountpoint not in self._alerted:
                 self._alerted.add(p.mountpoint)
                 self.notify_alert(p)
@@ -938,7 +949,10 @@ class DiskMonitorApp:
                 f"of {human_bytes(part.total)}")
         try:
             subprocess.Popen(
-                ["notify-send", "-u", "critical", "-a", APP_NAME, title, body],
+                ["notify-send", "-u", "normal", "-a", APP_NAME,
+                 # Collapse repeats into one slot instead of stacking a new banner.
+                 "-h", f"string:x-canonical-private-synchronous:{APP_ID}-{part.mountpoint}",
+                 title, body],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except OSError:
             pass
@@ -1120,6 +1134,8 @@ class DiskMonitorApp:
         heading("Alerts")
         self.var_alerts = toggle("Disk-full desktop alerts", self.alerts_enabled,
                                  lambda v: self.set_alerts_enabled(v.get()))
+        self.var_alert_root = toggle("Only alert for root (/)", self.alert_root_only,
+                                     lambda v: self.set_alert_root_only(v.get()))
         slider("Alert threshold (%)", 50, 99, 1, self.alert_threshold,
                lambda val: self.set_alert_threshold(val))
 
@@ -1185,9 +1201,39 @@ class DiskMonitorApp:
         self.root.destroy()
 
     # ---- geometry / fx --------------------------------------------------- #
+    def _screen_rects(self) -> list[tuple[int, int, int, int]]:
+        """Connected monitors, falling back to one full-screen rect."""
+        return self._monitors() or [
+            (0, 0, self.root.winfo_screenwidth(), self.root.winfo_screenheight())]
+
+    def _is_reachable(self, x: int, y: int, w: int, h: int) -> bool:
+        """True if enough of the header lands on a monitor to see and drag it."""
+        need_w, need_h = min(w, MIN_VISIBLE), min(h, HEADER_H)
+        for mx, my, mw, mh in self._screen_rects():
+            ox = max(0, min(x + w, mx + mw) - max(x, mx))
+            oy = max(0, min(y + h, my + mh) - max(y, my))
+            if ox >= need_w and oy >= need_h and y >= my:
+                return True
+        return False
+
+    def _home_position(self) -> tuple[int, int]:
+        mx, my, _, _ = self._screen_rects()[0]
+        return mx + 60, my + 60
+
     def _restore_position(self) -> None:
+        """Restore the saved position, but only if it still lands on a connected
+        monitor. Coordinates saved on an external display that has since been
+        unplugged would otherwise park the widget in dead space, where it runs
+        but is never visible."""
         x, y = self.cfg.get("x"), self.cfg.get("y")
-        self.root.geometry(f"+{int(x)}+{int(y)}" if x is not None else "+60+60")
+        if x is not None and y is not None:
+            self.root.update_idletasks()
+            h = max(self.root.winfo_reqheight(), HEADER_H)
+            if not self._is_reachable(int(x), int(y), self.width, h):
+                x = y = None
+        if x is None or y is None:
+            x, y = self._home_position()
+        self.root.geometry(f"+{int(x)}+{int(y)}")
 
     def _resize(self, n_rows: int) -> None:
         if self.maximized or self.shaded:
@@ -1258,6 +1304,7 @@ class DiskMonitorApp:
             "theme": self.theme,
             "alerts_enabled": self.alerts_enabled,
             "alert_threshold": self.alert_threshold,
+            "alert_root_only": self.alert_root_only,
             "show_io": self.show_io,
         })
         save_config(self.cfg)
