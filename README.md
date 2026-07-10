@@ -8,17 +8,19 @@ It floats above other windows so you can keep an eye on free space while you
 work, no matter what app is in front.
 
 ```
-┌────────────────────────────────────┐
-│ ● Disk Monitor          ⚙ 📌 ▭ ✕   │
-├────────────────────────────────────┤
-│ Root  (/)              ▲ 12 MB  98% │
-│ ███████████████████████████████░    │
-│ 179.9 GB / 194.4 GB · 4.5 GB free   │
+┌──────────────────────────────────────┐
+│ 💽 Disk Monitor      ⚙ 📌 ▭ — ▢ ✕   │
+├──────────────────────────────────────┤
+│ 🐧 Root  (/)          ▲ 12 MB   94%  │
+│ ██████████████████████████████░░      │
+│ 179.9 GB / 194.4 GB · 11.3 GB free   │
+│ ↓ 2.1 MB/s      ↑ 0.4 MB/s           │
 │                                      │
-│ /media/windows1                78%  │
-│ ████████████████████░░░░░░░░░░       │
-│ 215.4 GB / 276.5 GB · 61.2 GB free  │
-└────────────────────────────────────┘
+│ 🪟 /media/windows1               78%  │
+│ ████████████████████░░░░░░░░░░        │
+│ 215.4 GB / 276.5 GB · 61.2 GB free   │
+│ ↓ 0 B/s         ↑ 0 B/s              │
+└──────────────────────────────────────┘
 ```
 
 ## ✨ Features
@@ -59,6 +61,9 @@ work, no matter what app is in front.
   every login (writes/removes a `~/.config/autostart` entry for you).
 - **Remembers its place** — position, size, opacity, refresh speed, and view
   mode all persist.
+- **Multi-monitor aware** — maximize fills the monitor the widget is actually on,
+  and a position saved on a display you've since unplugged won't strand it
+  off-screen.
 - **Auto-detects USB drives** — plug one in and it appears; unplug and it goes.
 - **Zero heavy dependencies** — pure Python (Tkinter, already on most distros)
   plus `psutil`.
@@ -117,7 +122,7 @@ sudo zypper install -y python3 python3-tk python3-psutil
 
 **Clone with git** (recommended):
 ```bash
-git clone https://github.com/<your-username>/disk-space-monitor.git
+git clone https://github.com/RhymezxCode/disk-space-monitor.git
 cd disk-space-monitor
 ```
 
@@ -137,8 +142,8 @@ or use the convenience launcher:
 ./run.sh
 ```
 
-The widget should appear in the top-left of your screen, floating above your
-other windows. Drag it wherever you like — it remembers the spot.
+The widget should appear near the top-left of your primary monitor, floating
+above your other windows. Drag it wherever you like — it remembers the spot.
 
 ---
 
@@ -237,7 +242,7 @@ Click the ⚙ button (or right-click → *Settings…*) to open the Settings pan
 | **Opacity** | Window transparency, 0.3 – 1.0 (applies live) |
 | **Width** | Widget width, 280 – 760 px (applies live; same as the corner grip) |
 | **Maximize / restore** | Fill the current monitor, or return to the previous size |
-| **Reset position** | Snap the widget back to the top-left |
+| **Reset position** | Snap the widget back to the top-left of the primary monitor |
 | **Open settings folder** | Open `~/.config/disk-space-monitor` in your file manager |
 | **Uninstall Disk Monitor…** | Remove the launcher, autostart entry and saved settings, then close (asks first; leaves the program files) |
 
@@ -284,6 +289,30 @@ override:
 ```bash
 pip install --user --break-system-packages psutil
 ```
+
+### The app starts but no window appears
+Since v1.1.2 the saved position is validated against your connected monitors, so
+this shouldn’t happen — but if a window is ever missing while the process is
+running, check for orphaned copies and clear them:
+```bash
+pgrep -af disk_monitor.py          # is it actually running?
+pkill -f disk_monitor.py           # stop every copy
+rm -f ~/.config/disk-space-monitor/config.json   # last resort: reset position
+```
+On older versions, coordinates saved on an external display would place the
+widget off-screen after you unplugged that display: it ran, but was never
+visible.
+
+### Minimize hides the widget and I can’t get it back
+Restore it from your dock or with **Alt-Tab** — minimize (`—`) is a real window
+minimize. If it isn’t in either place, your window manager likely ignores
+`_MOTIF_WM_HINTS`; the app then falls back to collapsing the widget to its title
+bar instead, and `—` toggles it back.
+
+### The dock/taskbar shows a blank square instead of the disk icon
+Your desktop entry is missing `StartupWMClass=Disk-space-monitor`, which is how
+the shell pairs the window with the launcher. Re-run `./install.sh`, then log out
+and back in (GNOME caches desktop entries).
 
 ### The window doesn’t stay on top / appears behind other windows
 - **Wayland (GNOME/KDE):** the app runs through XWayland, where always-on-top
@@ -344,15 +373,32 @@ installed; remove them with your package manager only if nothing else needs them
 
 `psutil.disk_partitions()` enumerates mounts; pseudo/loop filesystems are
 filtered out by type and mount-point prefix. `psutil.disk_usage()` reads
-total/used/free for each remaining partition once per tick. The UI is a
-frameless Tkinter window with `overrideredirect` + `-topmost`, redrawn on a
-`Tk.after()` timer — single-threaded, no busy-waiting.
+total/used/free for each remaining partition once per tick, and
+`psutil.disk_io_counters(perdisk=True)` gives the throughput figures, differenced
+against the previous tick.
+
+The UI is a Tkinter window redrawn on a `Tk.after()` timer, with `-topmost` for
+the always-on-top behaviour. It has no title bar, but it is **not**
+`overrideredirect`: that hides decorations by unmanaging the window entirely,
+which costs it a taskbar button and makes `iconify()` a no-op. Instead it asks
+the window manager for zero decorations via `_MOTIF_WM_HINTS`, so it stays
+managed and `—` performs a real minimize. The hint is set on Tk's *wrapper*
+window — `winfo_id()` returns the inner window, whose properties the WM ignores.
+Window managers that ignore the hint fall back to `overrideredirect`, where `—`
+collapses the widget to its title bar instead.
+
+The saved position is checked against the currently connected monitors before
+it's reused, so unplugging a display can't strand the widget off-screen.
+
+Everything runs on the Tk main loop — no busy-waiting — except the *Find largest
+items* scan, which shells out to `du` on a background thread and posts its result
+back with `root.after()`, since Tk is not thread-safe.
 
 # 🤝 Contributing
 
-Issues and pull requests welcome! Ideas: per-drive read/write throughput, a
-system-tray icon, configurable warning thresholds with desktop notifications,
-and theming presets.
+Issues and pull requests welcome! Ideas: a system-tray icon, custom theme
+presets beyond light/dark, per-drive alert thresholds, a native Wayland backend
+(the widget currently relies on XWayland), and SMART health readouts.
 
 # 📄 License
 
